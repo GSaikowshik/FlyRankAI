@@ -1,0 +1,22 @@
+# Task API - FlyRank Internship Backend Track
+
+*Built by **Gandikota Sai Kowshik***
+
+A lightning-fast, in-memory RESTful CRUD API built for managing to-do lists. Designed with **Python** and **FastAPI**, this backend handles task creation, updates, and deletions with strict data validation and automatic interactive documentation.
+
+---
+
+## 🛠️ Tech Stack
+* **Language:** Python
+* **Framework:** FastAPI
+* **Server:** Uvicorn
+
+---
+
+## ⚡ How to Install & Run
+
+Get the server up and running on your local machine in seconds. 
+
+```bash
+pip install fastapi uvicorn pydantic
+uvicorn main:app --reload

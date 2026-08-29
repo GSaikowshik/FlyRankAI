@@ -72,14 +72,20 @@ def get_task(task_id: int):
     return dict(task)
 @app.post("/tasks", status_code=status.HTTP_201_CREATED)
 def create_task(task: TaskCreate):
-    global next_id
     if not task.title or not task.title.strip():
         raise HTTPException(status_code=400, detail="Title cannot be empty")
     
-    new_task = {"id": next_id, "title": task.title, "done": False}
-    tasks.append(new_task)
-    next_id += 1
-    return new_task
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO tasks (title, done) VALUES (?, ?)", (task.title, 0))
+    conn.commit()
+    
+    task_id = cursor.lastrowid
+    cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
+    new_task = cursor.fetchone()
+    conn.close()
+    
+    return dict(new_task)
 @app.put("/tasks/{task_id}")
 def update_task(task_id: int, task_update: TaskUpdate):
     for task in tasks:

@@ -1,7 +1,7 @@
 import os
 import psycopg
 from psycopg.rows import dict_row
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Request
 from pydantic import BaseModel
 from typing import Optional
 from dotenv import load_dotenv
@@ -63,9 +63,34 @@ def read_root():
 @app.get("/health")
 def get_health():
     return {"status": "ok"}
+@app.get("/public/info", status_code=status.HTTP_200_OK)
+def public_info():
+    return {"message": "Welcome stranger! This info is public."}
+
+@app.get("/protected/profile")
+def protected_profile(request: Request):
+   
+    auth_header = request.headers.get("Authorization")
+    
+
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": "Access token required"}
+        )
+   
+    token = auth_header.split(" ")[1]
+    
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": "Access token required"}
+        )
+
+    return {"message": "You brought a token! We will verify it in Stage 3.", "token": token}
 @app.post("/auth/signup", status_code=status.HTTP_201_CREATED)
 def signup(credentials: AuthCredentials):
-    # Validate missing or empty fields
+    
     if not credentials.email or not credentials.email.strip() or not credentials.password or not credentials.password.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -97,7 +122,7 @@ def signup(credentials: AuthCredentials):
 
 @app.post("/auth/login", status_code=status.HTTP_200_OK)
 def login(credentials: AuthCredentials):
-    # Validate missing or empty fields
+ 
     if not credentials.email or not credentials.email.strip() or not credentials.password or not credentials.password.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -136,7 +161,6 @@ def get_tasks():
 def get_task(task_id: int):
     with get_db() as conn:
         with conn.cursor() as cursor:
-            # psycopg uses %s for safe parameter injection
             cursor.execute("SELECT * FROM tasks WHERE id = %s", (task_id,))
             task = cursor.fetchone()
             if not task:

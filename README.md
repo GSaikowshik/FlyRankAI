@@ -1,8 +1,21 @@
-# Task API - FlyRank Internship Backend Track
+# Task API (Containerized PostgreSQL)
 
-*Built by **Gandikota Sai Kowshik***
+This is a RESTful CRUD API built with FastAPI, fully containerized using Docker, and backed by a real PostgreSQL database. 
 
-A lightning-fast, in-memory RESTful CRUD API built for managing to-do lists. Designed with **Python** and **FastAPI**, this backend handles task creation, updates, and deletions with strict data validation and automatic interactive documentation.
+## How to Run
+
+1. **Set your environment variables:**
+   Copy the provided example file to create your local `.env` configuration (this sets the database password):
+   ```bash
+   cp .env.example .env
+   ```
+
+2. **Start the stack:**
+   Bring up both the Python API and the PostgreSQL database with a single command:
+   ```bash
+   docker compose up -d
+   ```
+   *The API will now be running at http://localhost:3000.*
 
 ---
 
@@ -10,20 +23,31 @@ A lightning-fast, in-memory RESTful CRUD API built for managing to-do lists. Des
 * **Language:** Python
 * **Framework:** FastAPI
 * **Server:** Uvicorn
+* **Database:** PostgreSQL (Containerized)
+* **Infrastructure:** Docker & Docker Compose
 
 ---
+
 ## 🗄️ Database
-This API utilizes **SQLite** for persistent storage. SQLite was chosen because it requires zero setup, stores data in a single local file (`tasks.db`), and ensures tasks survive server restarts.
+This API utilizes a real **PostgreSQL** database running inside a Docker container. A Docker volume is mounted to ensure that all tasks survive container deletions and server restarts.
 
-* **Example SQL Query executed:** `SELECT * FROM tasks WHERE done = 1;` (Returns all completed tasks).
+![Database Screenshot](DockerScreenshot.png)
 
-![DB Browser](db_screenshot.png)
-
-## ⚡ How to Install & Run
-
-Get the server up and running on your local machine in seconds. 
+## Example Request
+Running a test request against the API using cURL:
 
 ```bash
-pip install fastapi uvicorn pydantic
-uvicorn main:app --reload
+$ curl -i http://localhost:3000/tasks
 
+HTTP/1.1 200 OK
+date: Sat, 29 Aug 2026 16:45:00 GMT
+server: uvicorn
+content-length: 125
+content-type: application/json
+
+[
+  {"id":1,"title":"Set up Docker","done":true},
+  {"id":2,"title":"Connect Postgres","done":false},
+  {"id":3,"title":"Write Compose file","done":false}
+]
+```

@@ -11,8 +11,14 @@ load_dotenv()
 
 url: str = os.environ.get("SUPABASE_URL")
 key: str = os.environ.get("SUPABASE_KEY")
+
+if not url or not key:
+    raise ValueError("SUPABASE_URL or SUPABASE_KEY is missing from environment variables.")
+
 supabase: Client = create_client(url, key)
+
 DATABASE_URL = os.environ.get("DATABASE_URL")
+
 app = FastAPI(title="Auth API")
 
 class TaskCreate(BaseModel):
@@ -22,26 +28,34 @@ class TaskUpdate(BaseModel):
     title: Optional[str] = None
     done: Optional[bool] = None
 
+class AuthCredentials(BaseModel):
+    email: str
+    password: str
+
 def get_db():
     return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
 def init_db():
-    with get_db() as conn:
-        with conn.cursor() as cursor:
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS tasks (
-                    id SERIAL PRIMARY KEY,
-                    title TEXT NOT NULL,
-                    done BOOLEAN NOT NULL DEFAULT FALSE
-                )
-            ''')
-            cursor.execute("SELECT COUNT(*) FROM tasks")
-            if cursor.fetchone()['count'] == 0:
-                cursor.execute("INSERT INTO tasks (title, done) VALUES (%s, %s), (%s, %s), (%s, %s)", 
-                               ("Set up Docker", True, "Connect Postgres", False, "Write Compose file", False))
-        conn.commit()
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS tasks (
+                        id SERIAL PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        done BOOLEAN NOT NULL DEFAULT FALSE
+                    )
+                ''')
+                cursor.execute("SELECT COUNT(*) FROM tasks")
+                if cursor.fetchone()['count'] == 0:
+                    cursor.execute("INSERT INTO tasks (title, done) VALUES (%s, %s), (%s, %s), (%s, %s)", 
+                                   ("Set up Docker", True, "Connect Postgres", False, "Write Compose file", False))
+            conn.commit()
+        print("✅ Database connected and initialized.")
+    except Exception as e:
+        print(f"⚠️ Warning: Could not connect to Postgres database. Error: {e}")
 
-init_db()
+#init_db()
 @app.get("/")
 def read_root():
     return {"message": "Server running and connected to Supabase"}
@@ -49,6 +63,68 @@ def read_root():
 @app.get("/health")
 def get_health():
     return {"status": "ok"}
+@app.post("/auth/signup", status_code=status.HTTP_201_CREATED)
+def signup(credentials: AuthCredentials):
+    # Validate missing or empty fields
+    if not credentials.email or not credentials.email.strip() or not credentials.password or not credentials.password.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "Email and password are required"}
+        )
+
+    try:
+        response = supabase.auth.sign_up({
+            "email": credentials.email.strip(),
+            "password": credentials.password
+        })
+        if not response.user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": "Failed to create user"}
+            )
+        return {
+            "message": "User created successfully",
+            "user": {
+                "id": response.user.id,
+                "email": response.user.email
+            }
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": str(e)}
+        )
+
+@app.post("/auth/login", status_code=status.HTTP_200_OK)
+def login(credentials: AuthCredentials):
+    # Validate missing or empty fields
+    if not credentials.email or not credentials.email.strip() or not credentials.password or not credentials.password.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "Email and password are required"}
+        )
+
+    try:
+        response = supabase.auth.sign_in_with_password({
+            "email": credentials.email.strip(),
+            "password": credentials.password
+        })
+        if not response.session:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"error": "Invalid login credentials"}
+            )
+        return {
+            "access_token": response.session.access_token,
+            "refresh_token": response.session.refresh_token,
+            "token_type": "bearer"
+        }
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": "Invalid login credentials"}
+        )
+
 @app.get("/tasks")
 def get_tasks():
     with get_db() as conn:

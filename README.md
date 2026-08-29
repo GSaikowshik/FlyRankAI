@@ -1,53 +1,34 @@
-# Task API (Containerized PostgreSQL)
+# Secure Auth API (FastAPI & Supabase)
 
-This is a RESTful CRUD API built with FastAPI, fully containerized using Docker, and backed by a real PostgreSQL database. 
+This is a secure REST API built with FastAPI that handles user authentication using Supabase Auth as the Identity Provider. It issues JSON Web Tokens (JWTs), verifies them to guard protected routes, and documents the flow using Swagger UI.
 
 ## How to Run
 
 1. **Set your environment variables:**
-   Copy the provided example file to create your local `.env` configuration (this sets the database password):
+   Copy the provided example file to create your local `.env` configuration, and add your Supabase credentials:
    ```bash
    cp .env.example .env
    ```
 
-2. **Start the stack:**
-   Bring up both the Python API and the PostgreSQL database with a single command:
+2. **Start the server:**
+   Bring up the FastAPI server with a single command:
    ```bash
-   docker compose up -d
+   uvicorn main:app
    ```
-   *The API will now be running at http://localhost:3000.*
+   *The API will be running at [http://127.0.0.1:8000](http://127.0.0.1:8000).*
 
----
+## API Reference
 
-## 🛠️ Tech Stack
-* **Language:** Python
-* **Framework:** FastAPI
-* **Server:** Uvicorn
-* **Database:** PostgreSQL (Containerized)
-* **Infrastructure:** Docker & Docker Compose
+| Method | Endpoint | Auth Required | Purpose |
+|--------|----------|---------------|---------|
+| POST | `/auth/signup` | No | Create a new user account |
+| POST | `/auth/login` | No | Authenticate & return a JWT |
+| POST | `/auth/logout` | Yes (Bearer) | End the user's session |
+| GET | `/protected/profile` | Yes (Bearer) | Read private profile data |
+| GET | `/public/info` | No | Read public, open data |
 
----
+## Swagger UI Documentation
 
-## 🗄️ Database
-This API utilizes a real **PostgreSQL** database running inside a Docker container. A Docker volume is mounted to ensure that all tasks survive container deletions and server restarts.
+This API is fully documented with an interactive Swagger UI, featuring built-in Bearer token authorization via FastAPI's `HTTPBearer` scheme.
 
-![Database Screenshot](DockerScreenshot.png)
-
-## Example Request
-Running a test request against the API using cURL:
-
-```bash
-$ curl -i http://localhost:3000/tasks
-
-HTTP/1.1 200 OK
-date: Sat, 29 Aug 2026 16:45:00 GMT
-server: uvicorn
-content-length: 125
-content-type: application/json
-
-[
-  {"id":1,"title":"Set up Docker","done":true},
-  {"id":2,"title":"Connect Postgres","done":false},
-  {"id":3,"title":"Write Compose file","done":false}
-]
-```
+![Swagger UI](AuthSwaggerUI.png)

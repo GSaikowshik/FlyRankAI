@@ -48,24 +48,21 @@ def get_health():
     return {"status": "ok"}
 @app.get("/tasks")
 def get_tasks():
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM tasks")
-    tasks = [dict(row) for row in cursor.fetchall()]
-    conn.close()
-    return tasks
+    with get_db() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM tasks")
+            return cursor.fetchall()
 
 @app.get("/tasks/{task_id}")
 def get_task(task_id: int):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
-    task = cursor.fetchone()
-    conn.close()
-    
-    if not task:
-        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-    return dict(task)
+    with get_db() as conn:
+        with conn.cursor() as cursor:
+            # psycopg uses %s for safe parameter injection
+            cursor.execute("SELECT * FROM tasks WHERE id = %s", (task_id,))
+            task = cursor.fetchone()
+            if not task:
+                raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+            return task
 @app.post("/tasks", status_code=status.HTTP_201_CREATED)
 def create_task(task: TaskCreate):
     if not task.title or not task.title.strip():

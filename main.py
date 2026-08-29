@@ -1,47 +1,43 @@
-from fastapi import FastAPI
-from fastapi import HTTPException
-from fastapi import status
+import os
+import psycopg
+from psycopg.rows import dict_row
+from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel
 from typing import Optional
-import sqlite3
+from dotenv import load_dotenv
+
+load_dotenv()
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+app = FastAPI(title="Task API", version="1.0")
 
 class TaskCreate(BaseModel):
     title: str
+
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
     done: Optional[bool] = None
 
-app = FastAPI(title="Task API", version="1.0")
-
-
-
 def get_db():
-    conn = sqlite3.connect("tasks.db")
-    conn.row_factory = sqlite3.Row 
-    return conn
+    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+
 def init_db():
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            done BOOLEAN NOT NULL DEFAULT 0
-        )
-    ''')
-    cursor.execute("SELECT COUNT(*) FROM tasks")
-    if cursor.fetchone()[0] == 0:
-        examples = [
-            ("Set up FastAPI", 1),
-            ("Build CRUD endpoints", 0),
-            ("Connect to SQLite", 0)
-        ]
-        cursor.executemany("INSERT INTO tasks (title, done) VALUES (?, ?)", examples)
-    conn.commit()
-    conn.close()
+    with get_db() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id SERIAL PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    done BOOLEAN NOT NULL DEFAULT FALSE
+                )
+            ''')
+            cursor.execute("SELECT COUNT(*) FROM tasks")
+            if cursor.fetchone()['count'] == 0:
+                cursor.execute("INSERT INTO tasks (title, done) VALUES (%s, %s), (%s, %s), (%s, %s)", 
+                               ("Set up Docker", True, "Connect Postgres", False, "Write Compose file", False))
+        conn.commit()
 
 init_db()
-
 
 @app.get("/")
 def get_root():

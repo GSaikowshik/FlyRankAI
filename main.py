@@ -5,11 +5,15 @@ from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel
 from typing import Optional
 from dotenv import load_dotenv
+from supabase import create_client, Client
 
 load_dotenv()
-DATABASE_URL = os.environ.get("DATABASE_URL")
 
-app = FastAPI(title="Task API", version="1.0")
+url: str = os.environ.get("SUPABASE_URL")
+key: str = os.environ.get("SUPABASE_KEY")
+supabase: Client = create_client(url, key)
+DATABASE_URL = os.environ.get("DATABASE_URL")
+app = FastAPI(title="Auth API")
 
 class TaskCreate(BaseModel):
     title: str
@@ -38,10 +42,9 @@ def init_db():
         conn.commit()
 
 init_db()
-
 @app.get("/")
-def get_root():
-    return {"name": "Task API", "version": "1.0", "endpoints": ["/tasks"]}
+def read_root():
+    return {"message": "Server running and connected to Supabase"}
 
 @app.get("/health")
 def get_health():
@@ -70,6 +73,7 @@ def create_task(task: TaskCreate):
     
     with get_db() as conn:
         with conn.cursor() as cursor:
+
             cursor.execute(
                 "INSERT INTO tasks (title, done) VALUES (%s, %s) RETURNING *", 
                 (task.title, False)

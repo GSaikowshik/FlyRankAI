@@ -3,6 +3,7 @@ from fastapi import HTTPException
 from fastapi import status
 from pydantic import BaseModel
 from typing import Optional
+import sqlite3
 
 class TaskCreate(BaseModel):
     title: str
@@ -12,12 +13,34 @@ class TaskUpdate(BaseModel):
 
 app = FastAPI(title="Task API", version="1.0")
 
-tasks = [
-    {"id": 1, "title": "Set up FastAPI", "done": True},
-    {"id": 2, "title": "Build CRUD endpoints", "done": False},
-    {"id": 3, "title": "Test in Swagger UI", "done": False},
-]
-next_id = 4
+
+
+def get_db():
+    conn = sqlite3.connect("tasks.db")
+    conn.row_factory = sqlite3.Row 
+    return conn
+def init_db():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            done BOOLEAN NOT NULL DEFAULT 0
+        )
+    ''')
+    cursor.execute("SELECT COUNT(*) FROM tasks")
+    if cursor.fetchone()[0] == 0:
+        examples = [
+            ("Set up FastAPI", 1),
+            ("Build CRUD endpoints", 0),
+            ("Connect to SQLite", 0)
+        ]
+        cursor.executemany("INSERT INTO tasks (title, done) VALUES (?, ?)", examples)
+    conn.commit()
+    conn.close()
+
+init_db()
 
 
 @app.get("/")

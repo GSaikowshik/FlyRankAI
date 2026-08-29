@@ -67,27 +67,46 @@ def get_health():
 def public_info():
     return {"message": "Welcome stranger! This info is public."}
 
+
 @app.get("/protected/profile")
 def protected_profile(request: Request):
    
     auth_header = request.headers.get("Authorization")
     
-
     if not auth_header or not auth_header.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"error": "Access token required"}
         )
-   
+    
     token = auth_header.split(" ")[1]
     
-    if not token:
+
+    try:
+        user_response = supabase.auth.get_user(token)
+
+        if not user_response.user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"error": "Invalid or expired token"}
+            )
+            
+ 
+        return {
+            "message": "Token verified successfully!",
+            "user": {
+                "id": user_response.user.id,
+                "email": user_response.user.email,
+                "created_at": user_response.user.created_at
+            }
+        }
+        
+    except Exception:
+     
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": "Access token required"}
+            detail={"error": "Invalid or expired token"}
         )
-
-    return {"message": "You brought a token! We will verify it in Stage 3.", "token": token}
 @app.post("/auth/signup", status_code=status.HTTP_201_CREATED)
 def signup(credentials: AuthCredentials):
     

@@ -1,7 +1,8 @@
 import os
 import psycopg
 from psycopg.rows import dict_row
-from fastapi import FastAPI, HTTPException, status, Request
+from fastapi import FastAPI, HTTPException, status, Request, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import Optional
 from dotenv import load_dotenv
@@ -31,6 +32,24 @@ class TaskUpdate(BaseModel):
 class AuthCredentials(BaseModel):
     email: str
     password: str
+
+security = HTTPBearer()
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    try:
+        user_response = supabase.auth.get_user(token)
+        if not user_response.user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"error": "Invalid or expired token"}
+            )
+        return user_response.user
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": "Invalid or expired token"}
+        )
 
 def get_db():
     return psycopg.connect(DATABASE_URL, row_factory=dict_row)
@@ -69,44 +88,24 @@ def public_info():
 
 
 @app.get("/protected/profile")
-def protected_profile(request: Request):
-   
-    auth_header = request.headers.get("Authorization")
-    
-    if not auth_header or not auth_header.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": "Access token required"}
-        )
-    
-    token = auth_header.split(" ")[1]
-    
-
-    try:
-        user_response = supabase.auth.get_user(token)
-
-        if not user_response.user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={"error": "Invalid or expired token"}
-            )
-            
- 
-        return {
-            "message": "Token verified successfully!",
-            "user": {
-                "id": user_response.user.id,
-                "email": user_response.user.email,
-                "created_at": user_response.user.created_at
-            }
+def protected_profile(user = Depends(get_current_user)):
+    return {
+        "message": "Token verified successfully!",
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "created_at": user.created_at
         }
-        
-    except Exception:
-     
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": "Invalid or expired token"}
-        )
+    }
+
+@app.get("/protected/dashboard")
+def protected_dashboard(user = Depends(get_current_user)):
+    return {"message": f"Welcome to the secure dashboard, {user.email}!"}
+
+@app.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(user = Depends(get_current_user)):
+    supabase.auth.sign_out()
+    return
 @app.post("/auth/signup", status_code=status.HTTP_201_CREATED)
 def signup(credentials: AuthCredentials):
     

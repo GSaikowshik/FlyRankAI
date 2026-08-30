@@ -45,5 +45,13 @@ Each valid record is validated using Pydantic before storage, ensuring this exac
 
 ## Run Report Evidence
 ```json
-PASTE_YOUR_RUN_REPORT_JSON_HERE
+ {
+  "start_time": "2026-08-30T16:43:40.257393+00:00",
+  "duration_seconds": 2.86,
+  "pages_fetched": 1,
+  "cache_hits": 63,
+  "valid_records": 60,
+  "invalid_records": 0,
+  "failed_pages": 1
+}
 ```

@@ -14,9 +14,8 @@ from typing import Optional
 
 USER_AGENT = "FlyRankInternship-A9/1.0 (+https://github.com/GSaikowshik)"
 TIMEOUT_SECONDS = 10
-DELAY_SECONDS = 0.5  # Polite delay between network requests
+DELAY_SECONDS = 0.5  
 
-# --- Stage 4: Pydantic Schema ---
 class BookRecord(BaseModel):
     title: str
     product_url: str
@@ -28,33 +27,62 @@ class BookRecord(BaseModel):
     source_page: str
     fetched_at: str
 
-def fetch_and_cache(url: str, cache_filepath: str) -> str:
-    """Fetches a page from the cache if it exists, otherwise from the network."""
+def fetch_and_cache(url: str, cache_filepath: str, stats: dict) -> Optional[str]:
+    """Fetches a page smartly, utilizing cache, and retrying on 5xx errors."""
     if os.path.exists(cache_filepath):
+        stats["cache_hits"] += 1
         with open(cache_filepath, "r", encoding="utf-8") as f:
             return f.read()
     
+    stats["pages_fetched"] += 1
     print(f"FETCH: {url}")
     time.sleep(DELAY_SECONDS)
     
     headers = {"User-Agent": USER_AGENT}
-    response = requests.get(url, headers=headers, timeout=TIMEOUT_SECONDS)
     
-    if response.status_code != 200:
-        raise Exception(f"Failed to fetch {url}. Status code: {response.status_code}")
-        
-    html = response.text
-    
-    with open(cache_filepath, "w", encoding="utf-8") as f:
-        f.write(html)
-        
-    return html
+    for attempt in range(2): 
+        try:
+            response = requests.get(url, headers=headers, timeout=TIMEOUT_SECONDS)
+            
+            if response.status_code == 200:
+                html = response.text
+                with open(cache_filepath, "w", encoding="utf-8") as f:
+                    f.write(html)
+                return html
+                
+            elif response.status_code in (403, 404):
+                print(f"Skipped {url} (Status: {response.status_code}) - No retry allowed.")
+                return None
+                
+            elif response.status_code >= 500:
+                print(f"Server error {response.status_code}. Retrying...")
+            else:
+                print(f"Failed {url} with status {response.status_code}")
+                return None
+                
+        except requests.RequestException as e:
+            print(f"Network error on {url}: {e}. Retrying...")
+            
+        if attempt == 0:
+            time.sleep(2) 
+            
+    return None 
 
 def main():
+    start_time = datetime.now(timezone.utc)
+    stats = {
+        "start_time": start_time.isoformat(),
+        "duration_seconds": 0.0,
+        "pages_fetched": 0,
+        "cache_hits": 0,
+        "valid_records": 0,
+        "invalid_records": 0,
+        "failed_pages": 0
+    }
+    
     os.makedirs("cache", exist_ok=True)
     os.makedirs("output", exist_ok=True)
-    
-    # --- Stage 2: Discover three catalogue pages ---
+ 
     current_url = "https://books.toscrape.com/catalogue/page-1.html"
     pages_visited = 0
     book_urls = []
@@ -64,36 +92,38 @@ def main():
         page_name = current_url.split("/")[-1]
         cache_file = f"cache/catalogue-{page_name}"
         
-        html = fetch_and_cache(current_url, cache_file)
+        html = fetch_and_cache(current_url, cache_file, stats)
+        if not html:
+            break
+            
         pages_visited += 1
-        
         soup = BeautifulSoup(html, "html.parser")
         
         for article in soup.select(".product_pod"):
             link = article.select_one("h3 a")
             if link:
-                relative_url = link.get("href")
-                absolute_url = urljoin(current_url, relative_url)
-                book_urls.append(absolute_url)
+                book_urls.append(urljoin(current_url, link.get("href")))
         
         next_button = soup.select_one(".next a")
-        if next_button:
-            next_relative = next_button.get("href")
-            current_url = urljoin(current_url, next_relative)
-        else:
-            current_url = None
+        current_url = urljoin(current_url, next_button.get("href")) if next_button else None
 
     unique_urls = list(set(book_urls))
     
-    # --- Stage 3: Extract the raw records ---
+
+    unique_urls.append("https://books.toscrape.com/catalogue/fake-book-url/index.html")
+ 
     print("\nExtracting detail pages...")
     raw_records = []
     
     for book_url in unique_urls:
-        book_id = book_url.split("/")[-2]
+        book_id = book_url.split("/")[-2] if len(book_url.split("/")) >= 2 else "unknown"
         cache_file = f"cache/book-{book_id}.html"
         
-        html = fetch_and_cache(book_url, cache_file)
+        html = fetch_and_cache(book_url, cache_file, stats)
+        if not html:
+            stats["failed_pages"] += 1
+            continue 
+            
         soup = BeautifulSoup(html, "html.parser")
         
         title_el = soup.select_one("h1")
@@ -102,7 +132,7 @@ def main():
         desc_el = soup.select_one("#product_description ~ p")
         rating_el = soup.select_one("p.star-rating")
         
-        record = {
+        raw_records.append({
             "title": title_el.text if title_el else None,
             "product_url": book_url,
             "price_text": price_el.text if price_el else None,
@@ -111,43 +141,29 @@ def main():
             "description": desc_el.text if desc_el else None,
             "source_page": "https://books.toscrape.com/catalogue/page-1.html",
             "fetched_at": datetime.now(timezone.utc).isoformat()
-        }
-        raw_records.append(record)
+        })
 
-    # --- Stage 4: Clean, Validate, and Store ---
-    print("\nValidating and storing records...")
-    valid_books = []
-    errors = []
-    
+    valid_books, errors = [], []
     for raw in raw_records:
         try:
-            # 1. Clean the price (remove £ and any weird encoding characters, turn into float)
             raw_price = raw.get("price_text", "")
-            if raw_price:
-                clean_string = raw_price.replace("£", "").replace("Â", "").strip()
-                raw["price_gbp"] = float(clean_string)
-            else:
-                raw["price_gbp"] = 0.0
-                
-            # 2. Validate against schema
-            valid_book = BookRecord(**raw)
-            valid_books.append(valid_book.model_dump())
-            
-        except ValidationError as e:
-            # 3. Bad records go to errors.json
-            errors.append({"url": raw.get("product_url"), "error": str(e), "raw_data": raw})
+            raw["price_gbp"] = float(raw_price.replace("£", "").replace("Â", "").strip()) if raw_price else 0.0
+            valid_books.append(BookRecord(**raw).model_dump())
         except Exception as e:
-            errors.append({"url": raw.get("product_url"), "error": str(e), "raw_data": raw})
+            errors.append({"url": raw.get("product_url"), "error": str(e)})
             
-    # Write to files
+    stats["valid_records"] = len(valid_books)
+    stats["invalid_records"] = len(errors)
+    stats["duration_seconds"] = round((datetime.now(timezone.utc) - start_time).total_seconds(), 2)
+
     with open("output/books.json", "w", encoding="utf-8") as f:
         json.dump(valid_books, f, indent=2)
-        
     with open("output/errors.json", "w", encoding="utf-8") as f:
         json.dump(errors, f, indent=2)
+    with open("output/run-report.json", "w", encoding="utf-8") as f:
+        json.dump(stats, f, indent=2)
         
-    print(f"Valid records saved to output/books.json: {len(valid_books)}")
-    print(f"Errors saved to output/errors.json: {len(errors)}")
+    print(f"\nDone! Valid: {stats['valid_records']} | Failed pages: {stats['failed_pages']}")
 
 if __name__ == "__main__":
     main()

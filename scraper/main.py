@@ -9,10 +9,24 @@ import json
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone
+from pydantic import BaseModel, ValidationError
+from typing import Optional
 
 USER_AGENT = "FlyRankInternship-A9/1.0 (+https://github.com/GSaikowshik)"
 TIMEOUT_SECONDS = 10
 DELAY_SECONDS = 0.5  # Polite delay between network requests
+
+# --- Stage 4: Pydantic Schema ---
+class BookRecord(BaseModel):
+    title: str
+    product_url: str
+    price_text: str
+    price_gbp: float
+    availability_text: str
+    rating_text: Optional[str]
+    description: Optional[str]
+    source_page: str
+    fetched_at: str
 
 def fetch_and_cache(url: str, cache_filepath: str) -> str:
     """Fetches a page from the cache if it exists, otherwise from the network."""
@@ -21,7 +35,6 @@ def fetch_and_cache(url: str, cache_filepath: str) -> str:
             return f.read()
     
     print(f"FETCH: {url}")
-    # Wait at least half a second between real requests to the site
     time.sleep(DELAY_SECONDS)
     
     headers = {"User-Agent": USER_AGENT}
@@ -39,6 +52,7 @@ def fetch_and_cache(url: str, cache_filepath: str) -> str:
 
 def main():
     os.makedirs("cache", exist_ok=True)
+    os.makedirs("output", exist_ok=True)
     
     # --- Stage 2: Discover three catalogue pages ---
     current_url = "https://books.toscrape.com/catalogue/page-1.html"
@@ -71,12 +85,8 @@ def main():
 
     unique_urls = list(set(book_urls))
     
-    print(f"catalogue_pages = {pages_visited}")
-    print(f"discovered = {len(book_urls)}")
-    print(f"unique_urls = {len(unique_urls)}\n")
-
     # --- Stage 3: Extract the raw records ---
-    print("Extracting detail pages...")
+    print("\nExtracting detail pages...")
     raw_records = []
     
     for book_url in unique_urls:
@@ -104,10 +114,40 @@ def main():
         }
         raw_records.append(record)
 
-    print(f"\ndetail_pages = {len(raw_records)}")
-    if raw_records:
-        print("Sample raw record:")
-        print(json.dumps(raw_records[0], indent=2))
+    # --- Stage 4: Clean, Validate, and Store ---
+    print("\nValidating and storing records...")
+    valid_books = []
+    errors = []
+    
+    for raw in raw_records:
+        try:
+            # 1. Clean the price (remove £ and any weird encoding characters, turn into float)
+            raw_price = raw.get("price_text", "")
+            if raw_price:
+                clean_string = raw_price.replace("£", "").replace("Â", "").strip()
+                raw["price_gbp"] = float(clean_string)
+            else:
+                raw["price_gbp"] = 0.0
+                
+            # 2. Validate against schema
+            valid_book = BookRecord(**raw)
+            valid_books.append(valid_book.model_dump())
+            
+        except ValidationError as e:
+            # 3. Bad records go to errors.json
+            errors.append({"url": raw.get("product_url"), "error": str(e), "raw_data": raw})
+        except Exception as e:
+            errors.append({"url": raw.get("product_url"), "error": str(e), "raw_data": raw})
+            
+    # Write to files
+    with open("output/books.json", "w", encoding="utf-8") as f:
+        json.dump(valid_books, f, indent=2)
+        
+    with open("output/errors.json", "w", encoding="utf-8") as f:
+        json.dump(errors, f, indent=2)
+        
+    print(f"Valid records saved to output/books.json: {len(valid_books)}")
+    print(f"Errors saved to output/errors.json: {len(errors)}")
 
 if __name__ == "__main__":
     main()
